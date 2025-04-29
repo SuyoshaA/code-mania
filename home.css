@@ -1,0 +1,53 @@
+/* Import Tailwind’s base, components, and utilities */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Components and Animations */
+@layer components {
+  /* Course card style with modern shadow and smooth hover animation */
+  .course-card {
+    @apply bg-white p-6 rounded-lg shadow-lg transform transition-all duration-300;
+  }
+  
+  /* Header styles */
+  .header {
+    @apply bg-blue-900 text-white py-6;
+  }
+  
+  /* Headings for a modern look */
+  .main-heading {
+    @apply text-4xl font-bold;
+  }
+  
+  .subheading {
+    @apply mt-2 text-lg;
+  }
+  
+  /* Container style */
+  .container {
+    @apply max-w-5xl mx-auto;
+  }
+  
+  /* Grid layout for courses */
+  .card-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6;
+  }
+}
+
+/* Keyframes for fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animation utility for applying fade in */
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in-out forwards;
+}
