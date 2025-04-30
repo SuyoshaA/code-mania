@@ -18,6 +18,9 @@ $course_id = $_GET['course_id'];
 // Retrieve course details
 $query = "SELECT * FROM courses WHERE id = ?";
 $stmt = $conn->prepare($query);
+if (!$stmt) {
+    die("Database error: " . $conn->error);
+}
 $stmt->bind_param("i", $course_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -32,6 +35,9 @@ if (!$course) {
 // Retrieve modules
 $modulesQuery = "SELECT * FROM modules WHERE course_id = ? ORDER BY sort_order ASC";
 $stmt = $conn->prepare($modulesQuery);
+if (!$stmt) {
+    die("Database error: " . $conn->error);
+}
 $stmt->bind_param("i", $course_id);
 $stmt->execute();
 $modulesResult = $stmt->get_result();
@@ -47,18 +53,23 @@ $last_module_id = null;
 if (!empty($modules)) {
     $last_module_id = end($modules)['id'];
     $capstone_check = $conn->prepare("SELECT is_capstone FROM modules WHERE id = ?");
-    $capstone_check->bind_param("i", $last_module_id);
-    $capstone_check->execute();
-    $capstone_result = $capstone_check->get_result();
-    if ($row = $capstone_result->fetch_assoc()) {
-        $has_capstone = $row['is_capstone'];
+    if ($capstone_check) {
+        $capstone_check->bind_param("i", $last_module_id);
+        $capstone_check->execute();
+        $capstone_result = $capstone_check->get_result();
+        if ($row = $capstone_result->fetch_assoc()) {
+            $has_capstone = $row['is_capstone'];
+        }
+        $capstone_check->close();
     }
-    $capstone_check->close();
 }
 
 // Retrieve progress
 $progressQuery = "SELECT completed FROM student_progress WHERE student_id = ? AND course_id = ?";
 $stmt = $conn->prepare($progressQuery);
+if (!$stmt) {
+    die("Database error: " . $conn->error);
+}
 $stmt->bind_param("ii", $user_id, $course_id);
 $stmt->execute();
 $progressResult = $stmt->get_result();
@@ -68,9 +79,11 @@ if ($progressRow = $progressResult->fetch_assoc()) {
     $currentProgress = 0;
     $insertQuery = "INSERT INTO student_progress (student_id, course_id, completed) VALUES (?, ?, ?)";
     $stmtInsert = $conn->prepare($insertQuery);
-    $stmtInsert->bind_param("iii", $user_id, $course_id, $currentProgress);
-    $stmtInsert->execute();
-    $stmtInsert->close();
+    if ($stmtInsert) {
+        $stmtInsert->bind_param("iii", $user_id, $course_id, $currentProgress);
+        $stmtInsert->execute();
+        $stmtInsert->close();
+    }
 }
 $stmt->close();
 
@@ -80,11 +93,13 @@ $totalModules = count($modules);
 $capstone_submitted = null;
 if ($has_capstone) {
     $capstone_query = $conn->prepare("SELECT * FROM capstone_projects WHERE student_id = ? AND course_id = ?");
-    $capstone_query->bind_param("ii", $user_id, $course_id);
-    $capstone_query->execute();
-    $capstone_result = $capstone_query->get_result();
-    $capstone_submitted = $capstone_result->fetch_assoc();
-    $capstone_query->close();
+    if ($capstone_query) {
+        $capstone_query->bind_param("ii", $user_id, $course_id);
+        $capstone_query->execute();
+        $capstone_result = $capstone_query->get_result();
+        $capstone_submitted = $capstone_result->fetch_assoc();
+        $capstone_query->close();
+    }
 }
 ?>
 
@@ -164,9 +179,11 @@ if ($has_capstone) {
         <li>
           <a href="#" class="tab-link inline-block py-2 px-4 font-semibold text-gray-700 hover:text-blue-600 transition-colors duration-300" data-tab="resources">Resources</a>
         </li>
-      
-
-        
+        <?php if ($has_capstone): ?>
+        <li>
+          <a href="#" class="tab-link inline-block py-2 px-4 font-semibold text-gray-700 hover:text-blue-600 transition-colors duration-300" data-tab="project-submission">Project</a>
+        </li>
+        <?php endif; ?>
       </ul>
     </nav>
     
@@ -196,37 +213,43 @@ if ($has_capstone) {
                   if ($module['sort_order'] > 1) {
                       $prev_module_order = $module['sort_order'] - 1;
                       $prev_module_query = $conn->prepare("SELECT id FROM modules WHERE course_id = ? AND sort_order = ?");
-                      $prev_module_query->bind_param("ii", $course_id, $prev_module_order);
-                      $prev_module_query->execute();
-                      $prev_module_result = $prev_module_query->get_result();
-                      if ($prev_module = $prev_module_result->fetch_assoc()) {
-                          // Check if student passed all quizzes in previous module
-                          $quizzes_query = $conn->prepare("SELECT q.id FROM quizzes q 
-                                                         JOIN chapters ch ON q.chapter_id = ch.id 
-                                                         JOIN modules m ON ch.module_id = m.id 
-                                                         WHERE m.id = ?");
-                          $quizzes_query->bind_param("i", $prev_module['id']);
-                          $quizzes_query->execute();
-                          $quizzes_result = $quizzes_query->get_result();
-                          $quiz_ids = [];
-                          while ($quiz_row = $quizzes_result->fetch_assoc()) {
-                              $quiz_ids[] = $quiz_row['id'];
-                          }
-                          
-                          foreach ($quiz_ids as $quiz_id) {
-                              $quiz_score_query = $conn->prepare("SELECT score FROM quiz_scores 
-                                                                WHERE student_id = ? AND quiz_id = ?");
-                              $quiz_score_query->bind_param("ii", $user_id, $quiz_id);
-                              $quiz_score_query->execute();
-                              $quiz_score_result = $quiz_score_query->get_result();
-                              if ($quiz_score = $quiz_score_result->fetch_assoc()) {
-                                  if ($quiz_score['score'] < 80) {
-                                      $can_access = false;
-                                      break;
+                      if ($prev_module_query) {
+                          $prev_module_query->bind_param("ii", $course_id, $prev_module_order);
+                          $prev_module_query->execute();
+                          $prev_module_result = $prev_module_query->get_result();
+                          if ($prev_module = $prev_module_result->fetch_assoc()) {
+                              // Check if student passed all quizzes in previous module
+                              $quizzes_query = $conn->prepare("SELECT q.id FROM quizzes q 
+                                                             JOIN chapters ch ON q.chapter_id = ch.id 
+                                                             JOIN modules m ON ch.module_id = m.id 
+                                                             WHERE m.id = ?");
+                              if ($quizzes_query) {
+                                  $quizzes_query->bind_param("i", $prev_module['id']);
+                                  $quizzes_query->execute();
+                                  $quizzes_result = $quizzes_query->get_result();
+                                  $quiz_ids = [];
+                                  while ($quiz_row = $quizzes_result->fetch_assoc()) {
+                                      $quiz_ids[] = $quiz_row['id'];
                                   }
-                              } else {
-                                  $can_access = false;
-                                  break;
+                                  
+                                  foreach ($quiz_ids as $quiz_id) {
+                                      $quiz_score_query = $conn->prepare("SELECT score FROM quiz_scores 
+                                                                        WHERE student_id = ? AND quiz_id = ?");
+                                      if ($quiz_score_query) {
+                                          $quiz_score_query->bind_param("ii", $user_id, $quiz_id);
+                                          $quiz_score_query->execute();
+                                          $quiz_score_result = $quiz_score_query->get_result();
+                                          if ($quiz_score = $quiz_score_result->fetch_assoc()) {
+                                              if ($quiz_score['score'] < 80) {
+                                                  $can_access = false;
+                                                  break;
+                                              }
+                                          } else {
+                                              $can_access = false;
+                                              break;
+                                          }
+                                      }
+                                  }
                               }
                           }
                       }
@@ -241,14 +264,16 @@ if ($has_capstone) {
                     <?php
                     $chaptersQuery = "SELECT * FROM chapters WHERE module_id = ? ORDER BY sort_order ASC";
                     $stmt = $conn->prepare($chaptersQuery);
-                    $stmt->bind_param("i", $module['id']);
-                    $stmt->execute();
-                    $chaptersResult = $stmt->get_result();
-                    $chapters = [];
-                    while ($row = $chaptersResult->fetch_assoc()) {
-                        $chapters[] = $row;
+                    if ($stmt) {
+                        $stmt->bind_param("i", $module['id']);
+                        $stmt->execute();
+                        $chaptersResult = $stmt->get_result();
+                        $chapters = [];
+                        while ($row = $chaptersResult->fetch_assoc()) {
+                            $chapters[] = $row;
+                        }
+                        $stmt->close();
                     }
-                    $stmt->close();
                     ?>
                     
                     <?php if (count($chapters) > 0): ?>
@@ -261,14 +286,16 @@ if ($has_capstone) {
                             <?php
                             $lessonsQuery = "SELECT * FROM lessons WHERE chapter_id = ? ORDER BY sort_order ASC";
                             $stmt = $conn->prepare($lessonsQuery);
-                            $stmt->bind_param("i", $chapter['id']);
-                            $stmt->execute();
-                            $lessonsResult = $stmt->get_result();
-                            $lessons = [];
-                            while ($row = $lessonsResult->fetch_assoc()) {
-                                $lessons[] = $row;
+                            if ($stmt) {
+                                $stmt->bind_param("i", $chapter['id']);
+                                $stmt->execute();
+                                $lessonsResult = $stmt->get_result();
+                                $lessons = [];
+                                while ($row = $lessonsResult->fetch_assoc()) {
+                                    $lessons[] = $row;
+                                }
+                                $stmt->close();
                             }
-                            $stmt->close();
                             ?>
                             
                             <?php if (count($lessons) > 0): ?>
@@ -301,14 +328,16 @@ if ($has_capstone) {
                             <?php
                             $quizQuery = "SELECT * FROM quizzes WHERE chapter_id = ? ORDER BY sort_order ASC";
                             $stmt = $conn->prepare($quizQuery);
-                            $stmt->bind_param("i", $chapter['id']);
-                            $stmt->execute();
-                            $quizResult = $stmt->get_result();
-                            $quizzes = [];
-                            while ($row = $quizResult->fetch_assoc()) {
-                                $quizzes[] = $row;
+                            if ($stmt) {
+                                $stmt->bind_param("i", $chapter['id']);
+                                $stmt->execute();
+                                $quizResult = $stmt->get_result();
+                                $quizzes = [];
+                                while ($row = $quizResult->fetch_assoc()) {
+                                    $quizzes[] = $row;
+                                }
+                                $stmt->close();
                             }
-                            $stmt->close();
                             ?>
                             
                             <?php if (count($quizzes) > 0): ?>
@@ -382,139 +411,172 @@ if ($has_capstone) {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <h4 class="font-semibold text-blue-800 mb-2">📚 Recommended Books</h4>
-              <ul class="list-disc list-inside space-y-1">
-              <ul>
-  <li>
-  <ul>
-  <li>
-    <a href="https://www.amazon.com/C-Programming-Language-4th/dp/0321563840" target="_blank" style="color: blue;">
-      The C++ Programming Language (4th Edition) by Bjarne Stroustrup
-    </a>
-  </li>
-  <li>
-    <a href="https://www.amazon.com/Effective-Modern-Specific-Ways-Improve/dp/1491903996" target="_blank" style="color: blue;">
-      Effective Modern C++ by Scott Meyers
-    </a>
-  </li>
-  <li>
-    <a href="https://www.amazon.com/Primer-5th-Stanley-B-Lippman/dp/0321714113" target="_blank" style="color: blue;">
-      C++ Primer (5th Edition) by Stanley B. Lippman, Josée Lajoie, and Barbara E. Moo
-    </a>
-  </li>
-</ul>
-
-
+              <ul class="space-y-2">
+                <?php if ($course_id == 1): // Java Course ?>
+                  <li>
+                    <a href="https://www.amazon.com/Effective-Java-Joshua-Bloch/dp/0134685997" target="_blank" class="text-blue-600 hover:underline">
+                      Effective Java by Joshua Bloch
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/Java-Complete-Reference-Eleventh/dp/1260463419" target="_blank" class="text-blue-600 hover:underline">
+                      Java: The Complete Reference by Herbert Schildt
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/Head-First-Java-Kathy-Sierra/dp/0596009208" target="_blank" class="text-blue-600 hover:underline">
+                      Head First Java by Kathy Sierra
+                    </a>
+                  </li>
+                <?php elseif ($course_id == 2): // Web Development Course ?>
+                  <li>
+                    <a href="https://www.amazon.com/HTML-CSS-Design-Build-Websites/dp/1118008189" target="_blank" class="text-blue-600 hover:underline">
+                      HTML and CSS: Design and Build Websites by Jon Duckett
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/JavaScript-JQuery-Interactive-Front-End-Development/dp/1118531647" target="_blank" class="text-blue-600 hover:underline">
+                      JavaScript and jQuery: Interactive Front-End Web Development by Jon Duckett
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/You-Dont-Know-Js-Book/dp/1491924462" target="_blank" class="text-blue-600 hover:underline">
+                      You Don't Know JS (Book Series) by Kyle Simpson
+                    </a>
+                  </li>
+                <?php else: ?>
+                  <li>
+                    <a href="https://www.amazon.com/C-Programming-Language-4th/dp/0321563840" target="_blank" class="text-blue-600 hover:underline">
+                      The C++ Programming Language (4th Edition) by Bjarne Stroustrup
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/Effective-Modern-Specific-Ways-Improve/dp/1491903996" target="_blank" class="text-blue-600 hover:underline">
+                      Effective Modern C++ by Scott Meyers
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://www.amazon.com/Primer-5th-Stanley-B-Lippman/dp/0321714113" target="_blank" class="text-blue-600 hover:underline">
+                      C++ Primer (5th Edition) by Stanley B. Lippman, Josée Lajoie, and Barbara E. Moo
+                    </a>
+                  </li>
+                <?php endif; ?>
               </ul>
             </div>
             
             <div class="bg-green-50 p-4 rounded-lg border border-green-200">
               <h4 class="font-semibold text-green-800 mb-2">🔗 Useful Links</h4>
-              <ul class="list-disc list-inside space-y-1">
-                <li><a href="https://developer.mozilla.org" class="text-blue-600 hover:underline">MDN Web Docs</a></li>
-                <li><a href="https://stackoverflow.com" class="text-blue-600 hover:underline">Stack Overflow</a></li>
-                <li><a href="https://github.com" class="text-blue-600 hover:underline">GitHub</a></li>
+              <ul class="space-y-2">
+                <?php if ($course_id == 1): // Java Course ?>
+                  <li><a href="https://docs.oracle.com/javase/tutorial/" class="text-blue-600 hover:underline">Official Java Tutorials</a></li>
+                  <li><a href="https://www.javatpoint.com/" class="text-blue-600 hover:underline">JavaTpoint</a></li>
+                  <li><a href="https://spring.io/guides" class="text-blue-600 hover:underline">Spring Guides</a></li>
+                <?php elseif ($course_id == 2): // Web Development Course ?>
+                  <li><a href="https://developer.mozilla.org" class="text-blue-600 hover:underline">MDN Web Docs</a></li>
+                  <li><a href="https://www.w3schools.com/" class="text-blue-600 hover:underline">W3Schools</a></li>
+                  <li><a href="https://css-tricks.com/" class="text-blue-600 hover:underline">CSS-Tricks</a></li>
+                <?php else: ?>
+                  <li><a href="https://developer.mozilla.org" class="text-blue-600 hover:underline">MDN Web Docs</a></li>
+                  <li><a href="https://stackoverflow.com" class="text-blue-600 hover:underline">Stack Overflow</a></li>
+                  <li><a href="https://github.com" class="text-blue-600 hover:underline">GitHub</a></li>
+                <?php endif; ?>
               </ul>
             </div>
           </div>
-          
-          
+        </div>
+      </div>
       
       <!-- Project Submission Tab -->
+      <?php if ($has_capstone): ?>
       <div id="project-submission" class="tab-content">
         <div class="bg-white p-6 rounded-lg shadow border border-gray-200">
           <h3 class="text-2xl font-semibold text-gray-800 mb-4">Project Submission</h3>
           
-          <?php if ($has_capstone): ?>
-            <div class="space-y-6">
-              <?php if ($capstone_submitted): ?>
-                <?php if ($capstone_submitted['status'] == 'approved'): ?>
-                  <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded">
-                    <h4 class="font-bold mb-2">✅ Project Approved</h4>
-                    <p>Congratulations! Your capstone project has been approved by your instructor.</p>
-                    <p class="mt-2">You have successfully completed this course!</p>
+          <div class="space-y-6">
+            <?php if ($capstone_submitted): ?>
+              <?php if ($capstone_submitted['status'] == 'approved'): ?>
+                <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded">
+                  <h4 class="font-bold mb-2">✅ Project Approved</h4>
+                  <p>Congratulations! Your capstone project has been approved by your instructor.</p>
+                  <p class="mt-2">You have successfully completed this course!</p>
+                </div>
+              <?php elseif ($capstone_submitted['status'] == 'resubmit'): ?>
+                <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
+                  <h4 class="font-bold mb-2">⚠️ Resubmission Required</h4>
+                  <p>Your instructor has requested that you resubmit your project with improvements.</p>
+                  <p class="mt-2">Please review the feedback and submit an updated version.</p>
+                </div>
+                
+                <form action="submit_capstone.php" method="post" enctype="multipart/form-data" class="mt-4">
+                  <input type="hidden" name="course_id" value="<?= $course_id ?>">
+                  <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Project Title</label>
+                    <input type="text" name="project_title" required 
+                           class="w-full px-3 py-2 border rounded" 
+                           value="<?= htmlspecialchars($capstone_submitted['project_title']) ?>">
                   </div>
-                <?php elseif ($capstone_submitted['status'] == 'resubmit'): ?>
-                  <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded">
-                    <h4 class="font-bold mb-2">⚠️ Resubmission Required</h4>
-                    <p>Your instructor has requested that you resubmit your project with improvements.</p>
-                    <p class="mt-2">Please review the feedback and submit an updated version.</p>
+                  <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Project Description</label>
+                    <textarea name="project_description" rows="4" required
+                              class="w-full px-3 py-2 border rounded"><?= htmlspecialchars($capstone_submitted['project_description']) ?></textarea>
                   </div>
+                  <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Updated Project Files (ZIP)</label>
+                    <input type="file" name="project_files" required class="w-full px-3 py-2 border rounded">
+                  </div>
+                  <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition duration-300">
+                    Resubmit Project
+                  </button>
+                </form>
+              <?php else: ?>
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded">
+                  <h4 class="font-bold mb-2">⏳ Project Under Review</h4>
+                  <p>Your capstone project has been submitted and is currently under review by your instructor.</p>
+                  <p class="mt-2">You will be notified when the review is complete.</p>
+                </div>
+              <?php endif; ?>
+            <?php else: ?>
+              <?php 
+              // Check if student has completed all modules (except capstone)
+              $completed_modules = floor($currentProgress / (100 / max(1, $totalModules)));
+              if ($completed_modules >= ($totalModules - 1)): ?>
+                <div class="bg-white p-4 rounded-lg border border-gray-200">
+                  <h4 class="text-xl font-semibold text-purple-700 mb-4">Submit Your Capstone Project</h4>
+                  <p class="mb-4">This is your final project to demonstrate what you've learned in this course. Please submit all required files and documentation.</p>
                   
-                  <form action="submit_capstone.php" method="post" enctype="multipart/form-data" class="mt-4">
+                  <form action="submit_capstone.php" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="course_id" value="<?= $course_id ?>">
                     <div class="mb-4">
                       <label class="block text-gray-700 mb-2">Project Title</label>
-                      <input type="text" name="project_title" required 
-                             class="w-full px-3 py-2 border rounded" 
-                             value="<?= htmlspecialchars($capstone_submitted['project_title']) ?>">
+                      <input type="text" name="project_title" required class="w-full px-3 py-2 border rounded">
                     </div>
                     <div class="mb-4">
                       <label class="block text-gray-700 mb-2">Project Description</label>
                       <textarea name="project_description" rows="4" required
-                                class="w-full px-3 py-2 border rounded"><?= htmlspecialchars($capstone_submitted['project_description']) ?></textarea>
+                                class="w-full px-3 py-2 border rounded"></textarea>
                     </div>
                     <div class="mb-4">
-                      <label class="block text-gray-700 mb-2">Updated Project Files (ZIP)</label>
+                      <label class="block text-gray-700 mb-2">Project Files (ZIP)</label>
                       <input type="file" name="project_files" required class="w-full px-3 py-2 border rounded">
+                      <p class="text-sm text-gray-500 mt-1">Please compress all your project files into a single ZIP file</p>
                     </div>
                     <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition duration-300">
-                      Resubmit Project
+                      Submit Project
                     </button>
                   </form>
-                <?php else: ?>
-                  <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded">
-                    <h4 class="font-bold mb-2">⏳ Project Under Review</h4>
-                    <p>Your capstone project has been submitted and is currently under review by your instructor.</p>
-                    <p class="mt-2">You will be notified when the review is complete.</p>
-                  </div>
-                <?php endif; ?>
+                </div>
               <?php else: ?>
-                <?php 
-                // Check if student has completed all modules (except capstone)
-                $completed_modules = floor($currentProgress / (100 / max(1, $totalModules)));
-                if ($completed_modules >= ($totalModules - 1)): ?>
-                  <div class="bg-white p-4 rounded-lg border border-gray-200">
-                    <h4 class="text-xl font-semibold text-purple-700 mb-4">Submit Your Capstone Project</h4>
-                    <p class="mb-4">This is your final project to demonstrate what you've learned in this course. Please submit all required files and documentation.</p>
-                    
-                    <form action="submit_capstone.php" method="post" enctype="multipart/form-data">
-                      <input type="hidden" name="course_id" value="<?= $course_id ?>">
-                      <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Project Title</label>
-                        <input type="text" name="project_title" required class="w-full px-3 py-2 border rounded">
-                      </div>
-                      <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Project Description</label>
-                        <textarea name="project_description" rows="4" required
-                                  class="w-full px-3 py-2 border rounded"></textarea>
-                      </div>
-                      <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Project Files (ZIP)</label>
-                        <input type="file" name="project_files" required class="w-full px-3 py-2 border rounded">
-                        <p class="text-sm text-gray-500 mt-1">Please compress all your project files into a single ZIP file</p>
-                      </div>
-                      <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition duration-300">
-                        Submit Project
-                      </button>
-                    </form>
-                  </div>
-                <?php else: ?>
-                  <div class="bg-gray-100 border-l-4 border-gray-500 text-gray-700 p-4 rounded">
-                    <h4 class="font-bold mb-2">🔒 Project Submission Locked</h4>
-                    <p>You must complete all modules and quizzes before you can submit your capstone project.</p>
-                    <p class="mt-2">Current progress: <?= $completed_modules ?>/<?= $totalModules-1 ?> modules completed</p>
-                  </div>
-                <?php endif; ?>
+                <div class="bg-gray-100 border-l-4 border-gray-500 text-gray-700 p-4 rounded">
+                  <h4 class="font-bold mb-2">🔒 Project Submission Locked</h4>
+                  <p>You must complete all modules and quizzes before you can submit your capstone project.</p>
+                  <p class="mt-2">Current progress: <?= $completed_modules ?>/<?= $totalModules-1 ?> modules completed</p>
+                </div>
               <?php endif; ?>
-            </div>
-          <?php else: ?>
-            <div class="bg-gray-100 border-l-4 border-gray-500 text-gray-700 p-4 rounded">
-              <h4 class="font-bold mb-2">No Capstone Project Required</h4>
-              <p>This course doesn't have a capstone project requirement.</p>
-            </div>
-          <?php endif; ?>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
+      <?php endif; ?>
     </div>
   </div>
 
